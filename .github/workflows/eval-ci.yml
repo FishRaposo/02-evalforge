@@ -2,9 +2,9 @@ name: AI Evaluation CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 jobs:
   unit-tests:
@@ -66,7 +66,7 @@ jobs:
     name: Run Evaluations (OpenAI Backend)
     runs-on: ubuntu-latest
     needs: unit-tests
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     steps:
       - uses: actions/checkout@v4
 
@@ -84,8 +84,8 @@ jobs:
       - name: Run RAG evaluation with OpenAI
         run: evalforge eval example_suites/rag_basic.yaml --backend openai --format json --output ./reports --fail-threshold 0.7
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_MODEL: gpt-4o-mini
+          EVALFORGE_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          EVALFORGE_OPENAI_MODEL: gpt-4o-mini
 
       - name: Upload OpenAI evaluation reports
         uses: actions/upload-artifact@v4

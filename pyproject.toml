@@ -26,6 +26,7 @@ dependencies = [
     "openai>=1.0",
     "httpx>=0.25",
     "rich>=13.0",
+    "tenacity>=8.0",
 ]
 
 [project.optional-dependencies]

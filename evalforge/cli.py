@@ -30,7 +30,7 @@ def _run_async(coro: object) -> object:
     Returns:
         The result of the coroutine.
     """
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 @app.command()
@@ -112,7 +112,7 @@ def eval(
 
     for r in results:
         status = "[green]PASSED[/green]" if r.passed else "[red]FAILED[/red]"
-        table.add_row(r.test_case_id, r.test_case_id, status, f"{r.score:.2f}")
+        table.add_row(r.test_case_id, r.test_case_name, status, f"{r.score:.2f}")
 
     console.print(table)
     console.print(f"\nSummary: {passed}/{len(results)} passed ({pass_rate:.1%})")
@@ -200,6 +200,80 @@ test_cases:
     suite_path.write_text(sample_suite, encoding="utf-8")
     console.print(f"[green]Created example suite:[/green] {suite_path}")
     console.print(f"\nRun it with: [bold]evalforge eval {suite_path}[/bold]")
+
+
+@app.command()
+def drift(
+    baseline: str = typer.Argument(help="Path to baseline report JSON"),
+    current: str = typer.Argument(help="Path to current report JSON"),
+    threshold: float = typer.Option(0.1, help="Regression threshold"),
+) -> None:
+    """Compare two evaluation reports to detect regression drift.
+
+    Loads baseline and current report files, compares their pass rates
+    and average scores, and displays any tests that changed status.
+    Exits with code 1 if a regression is detected.
+    """
+    from evalforge.drift import DriftDetector
+
+    baseline_path = Path(baseline)
+    current_path = Path(current)
+
+    if not baseline_path.exists():
+        console.print(f"[red]Baseline report not found: {baseline}[/red]")
+        raise typer.Exit(code=1)
+    if not current_path.exists():
+        console.print(f"[red]Current report not found: {current}[/red]")
+        raise typer.Exit(code=1)
+
+    baseline_report = DriftDetector.load_report(baseline_path)
+    current_report = DriftDetector.load_report(current_path)
+
+    detector = DriftDetector(threshold=threshold)
+    result = detector.compare(baseline_report, current_report)
+
+    table = Table(title="Drift Detection Results")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="bold")
+
+    table.add_row("Suite", result.suite_name)
+    table.add_row("Baseline Timestamp", result.baseline_timestamp)
+    table.add_row("Current Timestamp", result.current_timestamp)
+    table.add_row("Pass Rate Delta", f"{result.pass_rate_delta:+.2%}")
+    table.add_row("Avg Score Delta", f"{result.avg_score_delta:+.4f}")
+    table.add_row(
+        "Regression",
+        "[red]YES[/red]" if result.is_regression else "[green]NO[/green]",
+    )
+    table.add_row("Changed Tests", str(len(result.changed_tests)))
+
+    console.print(table)
+
+    if result.changed_tests:
+        change_table = Table(title="Changed Tests")
+        change_table.add_column("ID", style="cyan")
+        change_table.add_column("Name", style="white")
+        change_table.add_column("Change", style="bold")
+        change_table.add_column("Score Delta", style="magenta")
+
+        for ct in result.changed_tests:
+            change_color = "red" if ct["change"] == "pass_to_fail" else "green"
+            change_table.add_row(
+                ct["test_case_id"],
+                ct["test_case_name"],
+                f"[{change_color}]{ct['change']}[/{change_color}]",
+                f"{ct['score_delta']:+.4f}",
+            )
+
+        console.print(change_table)
+
+    if result.is_regression:
+        console.print(
+            "\n[red]Regression detected! Scores or pass rate declined significantly.[/red]"
+        )
+        raise typer.Exit(code=1)
+    else:
+        console.print("\n[green]No regression detected.[/green]")
 
 
 @app.command()

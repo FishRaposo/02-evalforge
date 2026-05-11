@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import time
+import asyncio
 from abc import ABC, abstractmethod
 from typing import Any
 
 from evalforge.backends.base import BaseBackend
+from evalforge.config import get_settings
 from evalforge.models.test_case import TestCase, TestSuite
 from evalforge.models.test_result import TestResult
 
@@ -42,18 +43,52 @@ class BaseRunner(ABC):
         ...
 
     async def run_suite(self, suite: TestSuite) -> list[TestResult]:
-        """Execute all test cases in a suite sequentially.
+        """Execute all test cases in a suite concurrently.
+
+        Uses asyncio.Semaphore to limit concurrency and asyncio.gather
+        for fault-tolerant parallel execution. Results are returned in
+        the same order as the input test cases.
 
         Args:
             suite: The test suite containing test cases to run.
 
         Returns:
-            A list of test results, one per test case.
+            A list of test results, one per test case, in input order.
         """
+        settings = get_settings()
+        semaphore = asyncio.Semaphore(settings.MAX_CONCURRENT_REQUESTS)
+
+        async def _run_with_semaphore(test_case: TestCase) -> TestResult:
+            async with semaphore:
+                return await self.run(test_case)
+
+        tasks = [_run_with_semaphore(tc) for tc in suite.test_cases]
+        outcomes = await asyncio.gather(*tasks, return_exceptions=True)
+
         results: list[TestResult] = []
-        for test_case in suite.test_cases:
-            result = await self.run(test_case)
-            results.append(result)
+        for test_case, outcome in zip(suite.test_cases, outcomes):
+            if isinstance(outcome, TestResult):
+                results.append(outcome)
+            elif isinstance(outcome, Exception):
+                results.append(
+                    self._create_result(
+                        test_case=test_case,
+                        passed=False,
+                        score=0.0,
+                        response="",
+                        error=str(outcome),
+                    )
+                )
+            else:
+                results.append(
+                    self._create_result(
+                        test_case=test_case,
+                        passed=False,
+                        score=0.0,
+                        response="",
+                        error="Unknown outcome type from gather",
+                    )
+                )
         return results
 
     def _create_result(

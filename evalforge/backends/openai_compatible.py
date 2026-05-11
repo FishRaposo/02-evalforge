@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Optional
+from typing import Any
 
 import httpx
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from evalforge.backends.base import BackendResponse, BaseBackend
 from evalforge.config import get_settings
+
+
+def _is_retryable_error(exc: BaseException) -> bool:
+    """Return True for 429 or 5xx HTTP status errors."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code == 429 or exc.response.status_code >= 500
+    return False
 
 
 class OpenAICompatibleBackend(BaseBackend):
@@ -26,10 +34,10 @@ class OpenAICompatibleBackend(BaseBackend):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        model: Optional[str] = None,
-        timeout: Optional[int] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        model: str | None = None,
+        timeout: int | None = None,
     ) -> None:
         """Initialize the OpenAI-compatible backend.
 
@@ -45,8 +53,13 @@ class OpenAICompatibleBackend(BaseBackend):
         self._model = model or settings.OPENAI_MODEL
         self._timeout = timeout or settings.REQUEST_TIMEOUT
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception(_is_retryable_error),
+    )
     async def query(
-        self, prompt: str, context: Optional[dict[str, Any]] = None
+        self, prompt: str, context: dict[str, Any] | None = None
     ) -> BackendResponse:
         """Send a query to the OpenAI-compatible API.
 
@@ -100,7 +113,7 @@ class OpenAICompatibleBackend(BaseBackend):
             return False
 
     def _build_messages(
-        self, prompt: str, context: Optional[dict[str, Any]] = None
+        self, prompt: str, context: dict[str, Any] | None = None
     ) -> list[dict[str, str]]:
         """Build the messages list for the OpenAI API call.
 

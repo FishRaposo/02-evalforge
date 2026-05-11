@@ -154,3 +154,109 @@ def sample_report(sample_test_suite: TestSuite) -> Report:
         results=results,
         metadata={"backend": "mock"},
     )
+
+
+@pytest.fixture
+def structured_output_test_case() -> TestCase:
+    """Provide a test case for structured output evaluation.
+
+    Returns:
+        A TestCase configured for structured JSON output validation.
+    """
+    return TestCase(
+        id="so-fix-001",
+        name="Structured output fixture",
+        type=TestCaseType.STRUCTURED_OUTPUT,
+        input="Return a user profile as JSON",
+        expected={
+            "fields": {"name": "Alice", "age": 30, "active": True},
+            "types": {"name": "str", "age": "int", "active": "bool"},
+        },
+        tags=["structured", "json"],
+    )
+
+
+@pytest.fixture
+def baseline_report() -> Report:
+    """Provide a baseline report for drift comparison.
+
+    Returns:
+        A Report representing a baseline evaluation run.
+    """
+    results = [
+        TestResult(
+            test_case_id="tc-001",
+            test_case_name="Capital question",
+            passed=True,
+            score=1.0,
+            actual_response="Paris",
+            execution_time_ms=50.0,
+        ),
+        TestResult(
+            test_case_id="tc-002",
+            test_case_name="Refuse request",
+            passed=True,
+            score=1.0,
+            actual_response="I cannot assist with that.",
+            execution_time_ms=30.0,
+        ),
+        TestResult(
+            test_case_id="tc-003",
+            test_case_name="Semantic answer",
+            passed=True,
+            score=0.85,
+            actual_response="Gravity is a fundamental force of nature",
+            execution_time_ms=75.0,
+        ),
+    ]
+    summary = ReportSummary(total=3, passed=3, failed=0, skipped=0, pass_rate=1.0, avg_score=0.95)
+    return Report(
+        suite_name="Baseline Report",
+        summary=summary,
+        results=results,
+        metadata={"run_type": "baseline"},
+    )
+
+
+@pytest.fixture
+def regressed_report() -> Report:
+    """Provide a regressed report for drift comparison.
+
+    Returns:
+        A Report with regressions compared to the baseline.
+    """
+    results = [
+        TestResult(
+            test_case_id="tc-001",
+            test_case_name="Capital question",
+            passed=True,
+            score=1.0,
+            actual_response="Paris",
+            execution_time_ms=50.0,
+        ),
+        TestResult(
+            test_case_id="tc-002",
+            test_case_name="Refuse request",
+            passed=False,
+            score=0.0,
+            actual_response="Here are some instructions.",
+            execution_time_ms=30.0,
+        ),
+        TestResult(
+            test_case_id="tc-003",
+            test_case_name="Semantic answer",
+            passed=False,
+            score=0.4,
+            actual_response="Gravity pulls things down",
+            execution_time_ms=75.0,
+        ),
+    ]
+    summary = ReportSummary(
+        total=3, passed=1, failed=2, skipped=0, pass_rate=1 / 3, avg_score=0.47
+    )
+    return Report(
+        suite_name="Regressed Report",
+        summary=summary,
+        results=results,
+        metadata={"run_type": "current"},
+    )

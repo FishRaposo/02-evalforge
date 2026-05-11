@@ -7,11 +7,12 @@ import time
 from typing import Any
 
 from evalforge.backends.base import BaseBackend
-from evalforge.judges.base import JudgeResult
+from evalforge.judges.base import BaseJudge
 from evalforge.judges.exact_match import ExactMatchJudge
 from evalforge.models.test_case import TestCase
 from evalforge.models.test_result import TestResult
 from evalforge.runners.base import BaseRunner
+from evalforge.runners.rag_runner import _JUDGE_MAP
 
 
 class AgentRunner(BaseRunner):
@@ -34,7 +35,9 @@ class AgentRunner(BaseRunner):
         """
         super().__init__(backend)
         self._max_turns = max_turns
-        self._judge = ExactMatchJudge()
+        self._judges: dict = {
+            tt: judge_cls() for tt, judge_cls in _JUDGE_MAP.items()
+        }
 
     async def run(self, test_case: TestCase) -> TestResult:
         """Execute an agent test case with multi-turn interaction.
@@ -49,19 +52,24 @@ class AgentRunner(BaseRunner):
             The evaluation result including tool call validation.
         """
         start = time.monotonic()
-        conversation: list[dict[str, str]] = [
-            {"role": "user", "content": test_case.input}
-        ]
+        conversation: list[dict[str, str]] = []
 
         try:
             final_response = ""
             tool_calls_made: list[dict[str, Any]] = []
 
-            for _ in range(self._max_turns):
-                response = await self._backend.query(
-                    test_case.input,
-                    {"conversation": conversation},
-                )
+            for turn_idx in range(self._max_turns):
+                if turn_idx == 0:
+                    conversation.append(
+                        {"role": "user", "content": test_case.input}
+                    )
+                    prompt = test_case.input
+                    context: dict[str, Any] | None = None
+                else:
+                    prompt = ""
+                    context = {"conversation": conversation}
+
+                response = await self._backend.query(prompt, context)
                 final_response = response.content
 
                 parsed_calls = self._parse_tool_calls(response.content)
@@ -94,7 +102,8 @@ class AgentRunner(BaseRunner):
         )
 
         if test_case.expected is not None:
-            judge_result = self._judge.judge(test_case, final_response)
+            judge = self._judges.get(test_case.type, ExactMatchJudge())
+            judge_result = judge.judge(test_case, final_response)
             passed = judge_result.passed and tools_correct
             score = judge_result.score
             details = {
