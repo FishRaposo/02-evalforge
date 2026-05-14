@@ -60,7 +60,7 @@ def eval(
     loader = SuiteLoader()
     suite = loader.load_suite(suite_path)
 
-    if not loader.validate_suite(suite):
+    if loader.validate_suite(suite):
         console.print("[red]Suite validation failed.[/red]")
         raise typer.Exit(code=1)
 

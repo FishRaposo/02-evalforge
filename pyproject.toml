@@ -23,7 +23,6 @@ dependencies = [
     "pyyaml>=6.0",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
-    "openai>=1.0",
     "httpx>=0.25",
     "rich>=13.0",
     "tenacity>=8.0",
